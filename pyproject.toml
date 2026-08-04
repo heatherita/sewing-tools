@@ -1,0 +1,17 @@
+[project]
+name = "sewing-pattern-stitcher"
+version = "0.1.0"
+description = "Stitch ArUco-marked sewing pattern images and export smoothed contours as SVG paths."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-contrib-python>=4.8",
+]
+
+[project.scripts]
+sewstitch = "sewing_pattern_stitcher.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
