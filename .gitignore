@@ -3,6 +3,25 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
 
+# Local environment
+.env
+.env.*
+
+# Generated stitching/debug artifacts
 debug/
+debug-*/
+out/
 *.svg
+*.png
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
