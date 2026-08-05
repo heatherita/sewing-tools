@@ -52,7 +52,14 @@ Notes:
 - `--smooth-epsilon` is a fraction of each contour perimeter. Higher values produce simpler paths.
 - Check `debug/01_stitched.png` when the SVG does not look right; it shows what was stitched before contour extraction.
 
-## Marker Layout Mode
+## Common neighbor layout mode
+
+this is the default. Use it for now and make sure every picture shares at least one marker. 
+
+
+
+## Marker Layout Mode 
+(Only use marker layout if you place aruso markers checkerboard style.)
 
 For the most stable workflow, give the tool a fixed ArUco board/table layout. Then each photo is warped directly into table coordinates:
 
