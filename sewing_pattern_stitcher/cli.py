@@ -5,6 +5,10 @@ from pathlib import Path
 
 from .pipeline import (
     DEFAULT_ARUCO_DICTIONARY,
+    DEFAULT_CALIBRATION_OBJECT,
+    DEFAULT_CALIBRATION_UNIT,
+    DEFAULT_CALIBRATION_WIDTH,
+    CalibrationObject,
     ThresholdMode,
     process_images,
 )
@@ -27,6 +31,38 @@ def build_parser() -> argparse.ArgumentParser:
         "--aruco-dictionary",
         default=DEFAULT_ARUCO_DICTIONARY,
         help="OpenCV ArUco dictionary name, e.g. DICT_4X4_50 or DICT_6X6_250.",
+    )
+    parser.add_argument(
+        "--calibration-object",
+        choices=[item.value for item in CalibrationObject],
+        default=DEFAULT_CALIBRATION_OBJECT,
+        help="Object used to scale SVG output. Defaults to none, which keeps raw pixel units.",
+    )
+    parser.add_argument(
+        "--calibration-width",
+        type=float,
+        default=DEFAULT_CALIBRATION_WIDTH,
+        help="Real width of the calibration object in --calibration-unit.",
+    )
+    parser.add_argument(
+        "--calibration-unit",
+        default=DEFAULT_CALIBRATION_UNIT,
+        help="SVG unit for calibrated output, e.g. mm, cm, or in.",
+    )
+    parser.add_argument(
+        "--calibration-points",
+        type=parse_calibration_points,
+        metavar="X1,Y1,X2,Y2",
+        help=(
+            "Manual calibration endpoints in original image pixels. "
+            "Required with --calibration-object manual."
+        ),
+    )
+    parser.add_argument(
+        "--calibration-image-index",
+        type=int,
+        default=0,
+        help="Zero-based input image index that contains --calibration-points.",
     )
     parser.add_argument(
         "--threshold",
@@ -128,6 +164,11 @@ def main() -> None:
         min_layout_markers=args.min_layout_markers,
         max_layout_error=args.max_layout_error,
         layout_pixels_per_unit=args.layout_pixels_per_unit,
+        calibration_object=CalibrationObject(args.calibration_object),
+        calibration_width=args.calibration_width,
+        calibration_unit=args.calibration_unit,
+        calibration_points=args.calibration_points,
+        calibration_image_index=args.calibration_image_index,
     )
     print(
         f"Wrote {result.svg_path} with {result.contour_count} contour paths "
@@ -135,6 +176,17 @@ def main() -> None:
     )
     for warning in result.warnings:
         print(f"Warning: {warning}")
+
+
+def parse_calibration_points(value: str) -> tuple[float, float, float, float]:
+    parts = value.split(",")
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError("Expected four comma-separated numbers: x1,y1,x2,y2.")
+    try:
+        x1, y1, x2, y2 = (float(part) for part in parts)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Calibration points must be numbers.") from exc
+    return x1, y1, x2, y2
 
 
 if __name__ == "__main__":

@@ -35,6 +35,8 @@ Useful options:
 sewstitch scans/*.jpg \
   --output pattern.svg \
   --aruco-dictionary DICT_4X4_50 \
+  --calibration-width 50 \
+  --calibration-unit mm \
   --threshold adaptive \
   --min-area 250 \
   --smooth-epsilon 0.003 \
@@ -49,8 +51,21 @@ Notes:
 - Each shared marker contributes its four detected corners to the alignment, so adjacent images can align with a single shared marker when detection is clean.
 - If images split into disconnected marker groups, each group is stitched internally and then placed beside the others on the SVG canvas.
 - `--normalize-marker-orientation` is enabled by default. It rotates disconnected groups so marker top edges point the same way. Use `--no-normalize-marker-orientation` if your markers are intentionally rotated differently.
+- SVG output uses raw pixel units by default. Use `--calibration-object aruco --calibration-width 50 --calibration-unit mm` to scale from a detected ArUco marker.
+- For a more stable known-width object, use `--calibration-object manual --calibration-points x1,y1,x2,y2 --calibration-width 50`. Points are in original input image pixels; use `--calibration-image-index` if the object is not in the first image.
 - `--smooth-epsilon` is a fraction of each contour perimeter. Higher values produce simpler paths.
 - Check `debug/01_stitched.png` when the SVG does not look right; it shows what was stitched before contour extraction.
+
+Manual calibration example:
+
+```bash
+sewstitch scans/*.jpg \
+  -o pattern.svg \
+  --calibration-object manual \
+  --calibration-points 120,830,640,830 \
+  --calibration-width 50 \
+  --calibration-unit mm
+```
 
 ## Common neighbor layout mode
 
@@ -59,7 +74,7 @@ this is the default. Use it for now and make sure every picture shares at least 
 
 
 ## Marker Layout Mode 
-(Only use marker layout if you place aruso markers checkerboard style.)
+(Don't use this. Maybe later when markers cover board,  checkerboard style.)
 
 For the most stable workflow, give the tool a fixed ArUco board/table layout. Then each photo is warped directly into table coordinates:
 
@@ -94,3 +109,7 @@ Layout controls:
 - `--min-layout-markers` controls how many known layout markers a photo must contain before it can be warped into table coordinates. The default is `2`.
 - `--max-layout-error` rejects photos whose marker reprojection error is too high. With millimeter coordinates, the default `3` means 3 mm.
 - `debug/stitch-report.txt` lists each photo's accepted/rejected layout solve, matched markers, inliers, mean error, and max error.
+
+##PHOTOGRAPHY TIPS:  
+
+  AruCo markers are necessary for pattern pieces that need to be stitched together by script (more than one frame)

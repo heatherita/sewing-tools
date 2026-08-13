@@ -12,12 +12,21 @@ import numpy as np
 
 
 DEFAULT_ARUCO_DICTIONARY = "DICT_4X4_50"
+DEFAULT_CALIBRATION_OBJECT = "none"
+DEFAULT_CALIBRATION_UNIT = "mm"
+DEFAULT_CALIBRATION_WIDTH = 50.0
 
 
 class ThresholdMode(str, Enum):
     FIXED = "fixed"
     OTSU = "otsu"
     ADAPTIVE = "adaptive"
+
+
+class CalibrationObject(str, Enum):
+    ARUCO = "aruco"
+    MANUAL = "manual"
+    NONE = "none"
 
 
 @dataclass(frozen=True)
@@ -99,6 +108,11 @@ def process_images(
     min_layout_markers: int = 2,
     max_layout_error: float = 3.0,
     layout_pixels_per_unit: float = 4.0,
+    calibration_object: CalibrationObject = CalibrationObject.ARUCO,
+    calibration_width: float = DEFAULT_CALIBRATION_WIDTH,
+    calibration_unit: str = DEFAULT_CALIBRATION_UNIT,
+    calibration_points: tuple[float, float, float, float] | None = None,
+    calibration_image_index: int = 0,
 ) -> ProcessResult:
     paths = tuple(Path(path) for path in image_paths)
     if not paths:
@@ -119,6 +133,14 @@ def process_images(
     grayscale = cv2.cvtColor(stitched, cv2.COLOR_BGR2GRAY)
     thresholded = threshold_image(grayscale, threshold_mode, threshold_value, invert)
     contours = find_smoothed_contours(thresholded, min_area, smooth_epsilon)
+    svg_unit, svg_units_per_pixel, calibration_warnings = resolve_svg_calibration(
+        stitch_result,
+        calibration_object,
+        calibration_width,
+        calibration_unit,
+        calibration_points,
+        calibration_image_index,
+    )
 
     output_svg_path.parent.mkdir(parents=True, exist_ok=True)
     write_svg(
@@ -126,8 +148,8 @@ def process_images(
         contours,
         stitched.shape[1],
         stitched.shape[0],
-        unit=stitch_result.plan.svg_unit,
-        coordinate_scale=stitch_result.plan.svg_units_per_pixel,
+        unit=svg_unit,
+        coordinate_scale=svg_units_per_pixel,
     )
 
     if debug_dir is not None:
@@ -143,8 +165,93 @@ def process_images(
         image_paths=paths,
         contour_count=len(contours),
         canvas_size=(stitched.shape[1], stitched.shape[0]),
-        warnings=build_warnings(stitch_result),
+        warnings=build_warnings(stitch_result) + calibration_warnings,
     )
+
+
+def resolve_svg_calibration(
+    stitch_result: StitchResult,
+    calibration_object: CalibrationObject,
+    calibration_width: float,
+    calibration_unit: str,
+    calibration_points: tuple[float, float, float, float] | None,
+    calibration_image_index: int,
+) -> tuple[str | None, float, tuple[str, ...]]:
+    if stitch_result.plan.svg_unit is not None:
+        return stitch_result.plan.svg_unit, stitch_result.plan.svg_units_per_pixel, ()
+
+    if calibration_object == CalibrationObject.NONE:
+        return None, 1.0, ()
+
+    if calibration_width <= 0:
+        raise ValueError("--calibration-width must be greater than zero.")
+
+    if not calibration_unit:
+        raise ValueError("--calibration-unit must not be empty.")
+
+    if calibration_object == CalibrationObject.ARUCO:
+        measured_pixels = measure_aruco_marker_width_pixels(stitch_result)
+        if measured_pixels is None:
+            return (
+                None,
+                1.0,
+                (
+                    "ArUco calibration was requested, but no complete detected marker edges "
+                    "were available. SVG output was left in pixels.",
+                ),
+            )
+    elif calibration_object == CalibrationObject.MANUAL:
+        measured_pixels = measure_manual_calibration_pixels(
+            stitch_result,
+            calibration_points,
+            calibration_image_index,
+        )
+    else:
+        raise ValueError(f"Unsupported calibration object: {calibration_object}")
+
+    return calibration_unit, calibration_width / measured_pixels, ()
+
+
+def measure_aruco_marker_width_pixels(stitch_result: StitchResult) -> float | None:
+    edge_lengths: list[float] = []
+    for markers, transform in zip(stitch_result.marker_sets, stitch_result.plan.transforms):
+        for corners in markers.corners:
+            transformed = cv2.perspectiveTransform(corners.reshape(-1, 1, 2), transform).reshape(
+                -1, 2
+            )
+            for start, end in ((0, 1), (1, 2), (2, 3), (3, 0)):
+                edge_length = float(np.linalg.norm(transformed[end] - transformed[start]))
+                if edge_length > 0:
+                    edge_lengths.append(edge_length)
+
+    if not edge_lengths:
+        return None
+    return float(np.mean(edge_lengths))
+
+
+def measure_manual_calibration_pixels(
+    stitch_result: StitchResult,
+    calibration_points: tuple[float, float, float, float] | None,
+    calibration_image_index: int,
+) -> float:
+    if calibration_points is None:
+        raise ValueError(
+            "--calibration-points x1,y1,x2,y2 is required when --calibration-object manual is used."
+        )
+
+    if calibration_image_index < 0 or calibration_image_index >= len(stitch_result.plan.transforms):
+        raise ValueError("--calibration-image-index must refer to one of the input images.")
+
+    x1, y1, x2, y2 = calibration_points
+    points = np.array([[[x1, y1]], [[x2, y2]]], dtype=np.float32)
+    transformed = cv2.perspectiveTransform(
+        points,
+        stitch_result.plan.transforms[calibration_image_index],
+    ).reshape(-1, 2)
+    distance = float(np.linalg.norm(transformed[1] - transformed[0]))
+    if distance <= 0:
+        raise ValueError("--calibration-points must describe a non-zero distance.")
+    return distance
 
 
 def build_warnings(stitch_result: StitchResult) -> tuple[str, ...]:
