@@ -74,7 +74,6 @@ this is the default. Use it for now and make sure every picture shares at least 
 
 
 ## Marker Layout Mode 
-(Don't use this. Maybe later when markers cover board,  checkerboard style.)
 
 For the most stable workflow, give the tool a fixed ArUco board/table layout. Then each photo is warped directly into table coordinates:
 
@@ -88,7 +87,35 @@ sewstitch scans/*.jpg \
   --debug-dir debug
 ```
 
-`marker-layout.json` maps each marker ID to its four table-coordinate corners in printed marker order: top-left, top-right, bottom-right, bottom-left.
+`marker-layout.json` can either map each marker ID to its four table-coordinate corners in printed marker order, or define only the measured outer rectangle.
+
+For the measured-rectangle shortcut, take one reference photo that sees the full marker border, then provide the measured width and height of the outermost marker-corner rectangle:
+
+```json
+{
+  "unit": "cm",
+  "width": 55,
+  "height": 135
+}
+```
+
+If you measured the four side lengths directly, provide left, right, top, and bottom instead. The tool averages opposite sides to make the rectangle:
+
+```json
+{
+  "unit": "cm",
+  "left": 139,
+  "right": 138.5,
+  "top": 163,
+  "bottom": 163
+}
+```
+
+This example is treated as a rectangle 163 cm wide and 138.75 cm tall.
+
+The tool uses the input image with the most detected markers as the reference layout photo. It maps that photo's outer detected marker corners to the measured rectangle, then derives layout coordinates for the markers visible in that reference photo. This works best when the border markers and pattern are on the same flat plane.
+
+For fully measured coordinates, use:
 
 ```json
 {
@@ -112,4 +139,4 @@ Layout controls:
 
 ##PHOTOGRAPHY TIPS:  
 
-  AruCo markers are necessary for pattern pieces that need to be stitched together by script (more than one frame)
+  Tape black posterboard to wall with Aruco markers around it. See wall-example.jpg.

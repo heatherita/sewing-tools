@@ -76,6 +76,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=127,
         help="Fixed threshold value when --threshold fixed is used.",
     )
+    parser.add_argument(
+        "--threshold-offset",
+        type=int,
+        default=0,
+        help=(
+            "Adjustment added to Otsu's automatically selected threshold. "
+            "Negative values are stricter; positive values capture fainter lines."
+        ),
+    )
     threshold_polarity = parser.add_mutually_exclusive_group()
     threshold_polarity.add_argument(
         "--invert",
@@ -110,7 +119,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--marker-layout",
         type=Path,
-        help="JSON file mapping ArUco IDs to their four table-coordinate corners.",
+        help=(
+            "JSON file mapping ArUco IDs to table-coordinate corners, or a measured "
+            "layout with width and height."
+        ),
     )
     parser.add_argument(
         "--min-layout-markers",
@@ -127,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--layout-pixels-per-unit",
         type=float,
-        default=4.0,
+        default=40.0,
         help="Raster processing resolution for marker-layout mode. SVG output is scaled back to layout units.",
     )
     marker_orientation = parser.add_mutually_exclusive_group()
@@ -155,6 +167,7 @@ def main() -> None:
         aruco_dictionary=args.aruco_dictionary,
         threshold_mode=ThresholdMode(args.threshold),
         threshold_value=args.threshold_value,
+        threshold_offset=args.threshold_offset,
         invert=args.invert,
         min_area=args.min_area,
         smooth_epsilon=args.smooth_epsilon,

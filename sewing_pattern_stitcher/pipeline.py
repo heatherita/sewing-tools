@@ -39,6 +39,16 @@ class ProcessResult:
 
 
 @dataclass(frozen=True)
+class ThresholdResult:
+    image: np.ndarray
+    mode: ThresholdMode
+    value: float | None
+    offset: int
+    applied_value: int | None
+    invert: bool
+
+
+@dataclass(frozen=True)
 class MarkerSet:
     ids: np.ndarray
     centers: np.ndarray
@@ -58,6 +68,10 @@ class MarkerLink:
 @dataclass(frozen=True)
 class MarkerLayout:
     markers: dict[int, np.ndarray]
+    left: float | None = None
+    right: float | None = None
+    top: float | None = None
+    bottom: float | None = None
     unit: str | None = None
 
 
@@ -99,6 +113,7 @@ def process_images(
     aruco_dictionary: str = DEFAULT_ARUCO_DICTIONARY,
     threshold_mode: ThresholdMode = ThresholdMode.OTSU,
     threshold_value: int = 127,
+    threshold_offset: int = 0,
     invert: bool = True,
     min_area: float = 100.0,
     smooth_epsilon: float = 0.002,
@@ -131,7 +146,14 @@ def process_images(
     )
     stitched = stitch_result.image
     grayscale = cv2.cvtColor(stitched, cv2.COLOR_BGR2GRAY)
-    thresholded = threshold_image(grayscale, threshold_mode, threshold_value, invert)
+    threshold_result = threshold_image(
+        grayscale,
+        threshold_mode,
+        threshold_value,
+        threshold_offset,
+        invert,
+    )
+    thresholded = threshold_result.image
     contours = find_smoothed_contours(thresholded, min_area, smooth_epsilon)
     svg_unit, svg_units_per_pixel, calibration_warnings = resolve_svg_calibration(
         stitch_result,
@@ -157,7 +179,13 @@ def process_images(
         cv2.imwrite(str(debug_dir / "01_stitched.png"), stitched)
         cv2.imwrite(str(debug_dir / "02_grayscale.png"), grayscale)
         cv2.imwrite(str(debug_dir / "03_threshold.png"), thresholded)
-        write_debug_report(debug_dir / "stitch-report.txt", paths, images, stitch_result)
+        write_debug_report(
+            debug_dir / "stitch-report.txt",
+            paths,
+            images,
+            stitch_result,
+            threshold_result,
+        )
         write_marker_debug_images(debug_dir, paths, images, stitch_result.marker_sets)
 
     return ProcessResult(
@@ -376,6 +404,57 @@ def erase_markers(image: np.ndarray, markers: MarkerSet, padding: float = 6.0) -
 
 def read_marker_layout(path: Path) -> MarkerLayout:
     data = json.loads(path.read_text(encoding="utf-8"))
+
+    if isinstance(data, list):
+        if len(data) != 2:
+            raise ValueError("Marker layout size list must contain exactly [width, height].")
+        width, height = (float(value) for value in data)
+        validate_layout_bounds(0.0, width, 0.0, height)
+        return MarkerLayout(markers={}, left=0.0, right=width, top=0.0, bottom=height)
+
+    if not isinstance(data, dict):
+        raise ValueError("Marker layout must be a JSON object, or [width, height].")
+
+    marker_data = data.get("markers")
+    if marker_data is None and "width" in data and "height" in data:
+        width = float(data["width"])
+        height = float(data["height"])
+        validate_layout_bounds(0.0, width, 0.0, height)
+        unit = data.get("unit")
+        if unit is not None and not isinstance(unit, str):
+            raise ValueError("Marker layout 'unit' must be a string, e.g. 'mm'.")
+        return MarkerLayout(markers={}, left=0.0, right=width, top=0.0, bottom=height, unit=unit)
+
+    if marker_data is None and all(edge in data for edge in ("left", "right", "top", "bottom")):
+        left = float(data["left"])
+        right = float(data["right"])
+        top = float(data["top"])
+        bottom = float(data["bottom"])
+        if right > left and bottom > top:
+            layout_left = left
+            layout_right = right
+            layout_top = top
+            layout_bottom = bottom
+        else:
+            width = (top + bottom) / 2.0
+            height = (left + right) / 2.0
+            validate_layout_bounds(0.0, width, 0.0, height)
+            layout_left = 0.0
+            layout_right = width
+            layout_top = 0.0
+            layout_bottom = height
+        unit = data.get("unit")
+        if unit is not None and not isinstance(unit, str):
+            raise ValueError("Marker layout 'unit' must be a string, e.g. 'mm'.")
+        return MarkerLayout(
+            markers={},
+            left=layout_left,
+            right=layout_right,
+            top=layout_top,
+            bottom=layout_bottom,
+            unit=unit,
+        )
+
     marker_data = data.get("markers", data)
     if not isinstance(marker_data, dict):
         raise ValueError("Marker layout must be a JSON object or contain a 'markers' object.")
@@ -397,6 +476,13 @@ def read_marker_layout(path: Path) -> MarkerLayout:
     return MarkerLayout(markers=layout, unit=unit)
 
 
+def validate_layout_bounds(left: float, right: float, top: float, bottom: float) -> None:
+    if right <= left:
+        raise ValueError("Marker layout right edge must be greater than left edge.")
+    if bottom <= top:
+        raise ValueError("Marker layout bottom edge must be greater than top edge.")
+
+
 def build_marker_layout_transforms(
     images: list[np.ndarray],
     marker_sets: list[MarkerSet],
@@ -405,6 +491,9 @@ def build_marker_layout_transforms(
     max_layout_error: float,
     layout_pixels_per_unit: float,
 ) -> TransformPlan:
+    if not marker_layout.markers:
+        marker_layout = infer_marker_layout_from_measured_bounds(marker_sets, marker_layout)
+
     transforms: list[np.ndarray | None] = []
     component_ids: list[int | None] = []
     layout_solves: list[LayoutSolve] = []
@@ -438,6 +527,76 @@ def build_marker_layout_transforms(
         layout_solves=layout_solves,
         svg_unit=marker_layout.unit,
         svg_units_per_pixel=1.0 / layout_pixels_per_unit,
+    )
+
+
+def infer_marker_layout_from_measured_bounds(
+    marker_sets: list[MarkerSet],
+    marker_layout: MarkerLayout,
+) -> MarkerLayout:
+    if (
+        marker_layout.left is None
+        or marker_layout.right is None
+        or marker_layout.top is None
+        or marker_layout.bottom is None
+    ):
+        raise ValueError("Marker layout must contain markers or measured layout edges.")
+
+    reference_index, reference_markers = max(
+        enumerate(marker_sets),
+        key=lambda item: len(item[1].ids),
+    )
+    if len(reference_markers.ids) < 2:
+        raise ValueError(
+            "Measured marker layout mode needs one reference image with at least two detected markers."
+        )
+
+    all_corners = np.concatenate(reference_markers.corners).astype(np.float32)
+    source_bounds = estimate_layout_bounds(all_corners)
+    destination_bounds = np.array(
+        [
+            [marker_layout.left, marker_layout.top],
+            [marker_layout.right, marker_layout.top],
+            [marker_layout.right, marker_layout.bottom],
+            [marker_layout.left, marker_layout.bottom],
+        ],
+        dtype=np.float32,
+    )
+    transform, _ = cv2.findHomography(source_bounds, destination_bounds)
+    if transform is None:
+        raise ValueError(
+            f"Could not infer measured marker layout from reference image {reference_index}."
+        )
+
+    inferred_markers: dict[int, np.ndarray] = {}
+    for marker_id, corners in zip(reference_markers.ids, reference_markers.corners):
+        transformed = cv2.perspectiveTransform(
+            corners.reshape(-1, 1, 2),
+            transform,
+        ).reshape(-1, 2)
+        inferred_markers[int(marker_id)] = transformed.astype(np.float32)
+
+    return MarkerLayout(
+        markers=inferred_markers,
+        left=marker_layout.left,
+        right=marker_layout.right,
+        top=marker_layout.top,
+        bottom=marker_layout.bottom,
+        unit=marker_layout.unit,
+    )
+
+
+def estimate_layout_bounds(points: np.ndarray) -> np.ndarray:
+    sums = points[:, 0] + points[:, 1]
+    differences = points[:, 0] - points[:, 1]
+    return np.array(
+        [
+            points[int(np.argmin(sums))],
+            points[int(np.argmax(differences))],
+            points[int(np.argmax(sums))],
+            points[int(np.argmin(differences))],
+        ],
+        dtype=np.float32,
     )
 
 
@@ -786,6 +945,7 @@ def write_debug_report(
     image_paths: tuple[Path, ...],
     images: list[np.ndarray],
     stitch_result: StitchResult,
+    threshold_result: ThresholdResult | None = None,
 ) -> None:
     lines = [
         "Sewing Pattern Stitcher Debug Report",
@@ -794,8 +954,29 @@ def write_debug_report(
         f"image_count: {len(image_paths)}",
         f"alignment_mode: {'marker_layout' if stitch_result.plan.layout_based else 'pairwise_marker_links'}",
         "",
-        "Warnings",
+        "Threshold",
     ]
+    if threshold_result is None:
+        lines.append("none")
+    else:
+        lines.extend(
+            [
+                f"mode: {threshold_result.mode.value}",
+                f"value: {'n/a' if threshold_result.value is None else f'{threshold_result.value:.3f}'}",
+                f"offset: {threshold_result.offset}",
+                (
+                    "applied_value: "
+                    f"{'n/a' if threshold_result.applied_value is None else threshold_result.applied_value}"
+                ),
+                f"invert: {threshold_result.invert}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Warnings",
+        ]
+    )
     warnings = build_warnings(stitch_result)
     lines.extend(warnings if warnings else ["none"])
     lines.extend(
@@ -953,14 +1134,18 @@ def threshold_image(
     grayscale: np.ndarray,
     mode: ThresholdMode,
     threshold_value: int,
+    threshold_offset: int,
     invert: bool,
-) -> np.ndarray:
+) -> ThresholdResult:
     threshold_type = cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY
 
     if mode == ThresholdMode.FIXED:
-        _, thresholded = cv2.threshold(grayscale, threshold_value, 255, threshold_type)
+        applied_value = clamp_threshold_value(threshold_value)
+        value, thresholded = cv2.threshold(grayscale, applied_value, 255, threshold_type)
     elif mode == ThresholdMode.OTSU:
-        _, thresholded = cv2.threshold(grayscale, 0, 255, threshold_type | cv2.THRESH_OTSU)
+        value, _ = cv2.threshold(grayscale, 0, 255, threshold_type | cv2.THRESH_OTSU)
+        applied_value = clamp_threshold_value(int(round(value)) + threshold_offset)
+        _, thresholded = cv2.threshold(grayscale, applied_value, 255, threshold_type)
     elif mode == ThresholdMode.ADAPTIVE:
         adaptive_method = cv2.ADAPTIVE_THRESH_GAUSSIAN_C
         thresholded = cv2.adaptiveThreshold(
@@ -971,10 +1156,23 @@ def threshold_image(
             35,
             5,
         )
+        value = None
+        applied_value = None
     else:
         raise ValueError(f"Unsupported threshold mode: {mode}")
 
-    return thresholded
+    return ThresholdResult(
+        image=thresholded,
+        mode=mode,
+        value=None if value is None else float(value),
+        offset=threshold_offset,
+        applied_value=applied_value,
+        invert=invert,
+    )
+
+
+def clamp_threshold_value(value: int) -> int:
+    return max(0, min(255, int(value)))
 
 
 def find_smoothed_contours(
