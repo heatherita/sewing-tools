@@ -13,6 +13,10 @@ The pipeline is:
 7. Smooth contours.
 8. Export contours as SVG paths.
 
+## Project status: 
+
+This is an experimental tool I'm sharing with the sewing community. I have limited time for support, but bug reports and contributions are welcome.
+
 ## Install
 
 ```bash
@@ -46,6 +50,7 @@ sewstitch tmp/*.jpg \
 Notes:
 
 - The tool extracts dark pattern lines on light paper by default. Use `--no-invert` for light lines on a dark background.
+- Thresholding defaults to Otsu's automatic method. Use `--threshold-offset -10` or similar when Otsu is close but captures too much paper texture; use `--threshold fixed --threshold-value 60` for fully manual tuning.
 - Images are stitched through any chain of shared ArUco marker IDs, regardless of input order. For example, image 3 can align through image 2 even if it has no marker IDs in common with image 1.
 - The stitcher compares every image pair, then uses the strongest marker links to assemble each connected group.
 - Each shared marker contributes its four detected corners to the alignment, so adjacent images can align with a single shared marker when detection is clean.
@@ -136,14 +141,30 @@ Layout controls:
 - `--max-layout-error` rejects photos whose marker reprojection error is too high. With millimeter coordinates, the default `3` means 3 mm.
 - `debug/stitch-report.txt` lists each photo's accepted/rejected layout solve, matched markers, inliers, mean error, and max error.
 
-##PHOTOGRAPHY TIPS:  
+## Photography tips
 
-  Tape black posterboard to wall with Aruco markers around it. See wall-example.jpg.
-  Iron the pattern tissue before photographing
-  See tmp/examples for some example images
+- Tape a black posterboard border to the wall with ArUco markers around it.
+- Put white or light backing behind the tissue area so the pattern paper stays bright.
+- Iron or flatten the pattern tissue before photographing.
+- Avoid HDR if it makes exposures inconsistent across the image set.
+- Use even, diffuse lighting from both sides and avoid phone flash.
+- Check `debug/03_threshold.png` when the SVG is noisy; it is the actual black-and-white image used for contour extraction.
 
-## TODO:
+## Development credit
 
- - modularize this script by breaking it into a directory structure with several .py files
+Portions of this project were coded with assistance from OpenAI Codex CLI 0.151.0-alpha.7.2.
 
-   
+## References
+
+- generate and print AruCo Markers:  https://fodi.github.io/arucosheetgen/
+- technical explanation of Aruco Markers: https://docs.opencv.org/4.13.0/d5/dae/tutorial_aruco_detection.html
+
+## TODO
+
+- Add tests for marker detection, marker-layout parsing, Otsu offset thresholding, and SVG output.
+- Split the pipeline into smaller modules instead of keeping most logic in `pipeline.py`.
+- Improve preprocessing for uneven lighting, translucent tissue, paper texture, and shadows.
+- Add an option to crop or ignore the marker border before contour extraction.
+- Add a command for generating printable ArUco marker sheets and matching layout files.
+- Add clearer failure messages when the wrong ArUco dictionary is selected.
+- Add examples for common workflows: pairwise marker stitching, measured-border layout mode, and manual calibration.
