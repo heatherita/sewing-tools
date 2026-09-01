@@ -26,13 +26,13 @@ pip install -e .
 ## Use
 
 ```bash
-sewstitch scans/*.jpg -o pattern.svg
+sewstitch tmp/*.jpg -o pattern.svg
 ```
 
 Useful options:
 
 ```bash
-sewstitch scans/*.jpg \
+sewstitch tmp/*.jpg \
   --output pattern.svg \
   --aruco-dictionary DICT_4X4_50 \
   --calibration-width 50 \
@@ -59,7 +59,7 @@ Notes:
 Manual calibration example:
 
 ```bash
-sewstitch scans/*.jpg \
+sewstitch tmp/*.jpg \
   -o pattern.svg \
   --calibration-object manual \
   --calibration-points 120,830,640,830 \
@@ -72,13 +72,12 @@ sewstitch scans/*.jpg \
 this is the default. Use it for now and make sure every picture shares at least one marker. 
 
 
-
 ## Marker Layout Mode 
 
 For the most stable workflow, give the tool a fixed ArUco board/table layout. Then each photo is warped directly into table coordinates:
 
 ```bash
-sewstitch scans/*.jpg \
+sewstitch tmp/*.jpg \
   -o pattern.svg \
   --marker-layout marker-layout.json \
   --layout-pixels-per-unit 4 \
@@ -140,3 +139,11 @@ Layout controls:
 ##PHOTOGRAPHY TIPS:  
 
   Tape black posterboard to wall with Aruco markers around it. See wall-example.jpg.
+  Iron the pattern tissue before photographing
+  See tmp/examples for some example images
+
+## TODO:
+
+ - modularize this script by breaking it into a directory structure with several .py files
+
+   
