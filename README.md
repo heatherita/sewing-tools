@@ -50,7 +50,7 @@ sewstitch tmp/*.jpg \
 Notes:
 
 - The tool extracts dark pattern lines on light paper by default. Use `--no-invert` for light lines on a dark background.
-- Thresholding defaults to Otsu's automatic method. Use `--threshold-offset -10` or similar when Otsu is close but captures too much paper texture; use `--threshold fixed --threshold-value 60` for fully manual tuning.
+- Thresholding defaults to Otsu's automatic method. Use `--threshold-offset -10` or similar when Otsu is close but captures too much paper texture; use `--threshold fixed --threshold-value 60` for fully manual tuning. For adaptive thresholding on tissue patterns, preserve essential sizing lines first, then tighten texture cleanup as needed. A useful starting point is `--threshold adaptive --adaptive-block-size 75 --adaptive-c 12 --min-area 50`.
 - Images are stitched through any chain of shared ArUco marker IDs, regardless of input order. For example, image 3 can align through image 2 even if it has no marker IDs in common with image 1.
 - The stitcher compares every image pair, then uses the strongest marker links to assemble each connected group.
 - Each shared marker contributes its four detected corners to the alignment, so adjacent images can align with a single shared marker when detection is clean.
@@ -74,8 +74,7 @@ sewstitch tmp/*.jpg \
 
 ## Common neighbor layout mode
 
-this is the default. Use it for now and make sure every picture shares at least one marker. 
-
+This is the default. Use it for now and make sure every picture shares at least one marker. 
 
 ## Marker Layout Mode 
 
@@ -140,6 +139,22 @@ Layout controls:
 - `--min-layout-markers` controls how many known layout markers a photo must contain before it can be warped into table coordinates. The default is `2`.
 - `--max-layout-error` rejects photos whose marker reprojection error is too high. With millimeter coordinates, the default `3` means 3 mm.
 - `debug/stitch-report.txt` lists each photo's accepted/rejected layout solve, matched markers, inliers, mean error, and max error.
+
+## Author's note: 
+
+For me, the black background on the wall, with this command, has been the most successful (9/2/2026):
+
+```
+sewstitch /path/to/images/*.jpg -o out/out.svg   
+--debug-dir debug --aruco-dictionary DICT_4X4_50 --threshold adaptive
+```
+
+Or this, slightly more fine-tuned:
+
+```
+sewstitch /path/to/images/*.jpg -o out/out.svg   
+--debug-dir debug --aruco-dictionary DICT_4X4_50 --threshold adaptive --adaptive-block-size 75 --adaptive-c 12 --min-area 50
+```
 
 ## Photography tips
 

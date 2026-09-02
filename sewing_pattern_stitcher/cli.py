@@ -85,6 +85,24 @@ def build_parser() -> argparse.ArgumentParser:
             "Negative values are stricter; positive values capture fainter lines."
         ),
     )
+    parser.add_argument(
+        "--adaptive-block-size",
+        type=parse_adaptive_block_size,
+        default=35,
+        help=(
+            "Odd pixel window size for --threshold adaptive. Larger values ignore more "
+            "local paper texture and shadow variation."
+        ),
+    )
+    parser.add_argument(
+        "--adaptive-c",
+        type=float,
+        default=5.0,
+        help=(
+            "Constant subtracted from the local adaptive threshold. Larger values are "
+            "stricter for dark-line extraction."
+        ),
+    )
     threshold_polarity = parser.add_mutually_exclusive_group()
     threshold_polarity.add_argument(
         "--invert",
@@ -168,6 +186,8 @@ def main() -> None:
         threshold_mode=ThresholdMode(args.threshold),
         threshold_value=args.threshold_value,
         threshold_offset=args.threshold_offset,
+        adaptive_block_size=args.adaptive_block_size,
+        adaptive_c=args.adaptive_c,
         invert=args.invert,
         min_area=args.min_area,
         smooth_epsilon=args.smooth_epsilon,
@@ -200,6 +220,18 @@ def parse_calibration_points(value: str) -> tuple[float, float, float, float]:
     except ValueError as exc:
         raise argparse.ArgumentTypeError("Calibration points must be numbers.") from exc
     return x1, y1, x2, y2
+
+
+def parse_adaptive_block_size(value: str) -> int:
+    try:
+        block_size = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("--adaptive-block-size must be an integer.") from exc
+    if block_size < 3 or block_size % 2 == 0:
+        raise argparse.ArgumentTypeError(
+            "--adaptive-block-size must be an odd integer greater than or equal to 3."
+        )
+    return block_size
 
 
 if __name__ == "__main__":

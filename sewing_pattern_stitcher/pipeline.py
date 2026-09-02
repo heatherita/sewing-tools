@@ -46,6 +46,8 @@ class ThresholdResult:
     offset: int
     applied_value: int | None
     invert: bool
+    adaptive_block_size: int | None = None
+    adaptive_c: float | None = None
 
 
 @dataclass(frozen=True)
@@ -114,6 +116,8 @@ def process_images(
     threshold_mode: ThresholdMode = ThresholdMode.OTSU,
     threshold_value: int = 127,
     threshold_offset: int = 0,
+    adaptive_block_size: int = 35,
+    adaptive_c: float = 5.0,
     invert: bool = True,
     min_area: float = 100.0,
     smooth_epsilon: float = 0.002,
@@ -151,6 +155,8 @@ def process_images(
         threshold_mode,
         threshold_value,
         threshold_offset,
+        adaptive_block_size,
+        adaptive_c,
         invert,
     )
     thresholded = threshold_result.image
@@ -969,6 +975,14 @@ def write_debug_report(
                     f"{'n/a' if threshold_result.applied_value is None else threshold_result.applied_value}"
                 ),
                 f"invert: {threshold_result.invert}",
+                (
+                    "adaptive_block_size: "
+                    f"{'n/a' if threshold_result.adaptive_block_size is None else threshold_result.adaptive_block_size}"
+                ),
+                (
+                    "adaptive_c: "
+                    f"{'n/a' if threshold_result.adaptive_c is None else threshold_result.adaptive_c:g}"
+                ),
             ]
         )
     lines.extend(
@@ -1135,6 +1149,8 @@ def threshold_image(
     mode: ThresholdMode,
     threshold_value: int,
     threshold_offset: int,
+    adaptive_block_size: int,
+    adaptive_c: float,
     invert: bool,
 ) -> ThresholdResult:
     threshold_type = cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY
@@ -1147,14 +1163,16 @@ def threshold_image(
         applied_value = clamp_threshold_value(int(round(value)) + threshold_offset)
         _, thresholded = cv2.threshold(grayscale, applied_value, 255, threshold_type)
     elif mode == ThresholdMode.ADAPTIVE:
+        if adaptive_block_size < 3 or adaptive_block_size % 2 == 0:
+            raise ValueError("--adaptive-block-size must be an odd integer greater than or equal to 3.")
         adaptive_method = cv2.ADAPTIVE_THRESH_GAUSSIAN_C
         thresholded = cv2.adaptiveThreshold(
             grayscale,
             255,
             adaptive_method,
             threshold_type,
-            35,
-            5,
+            adaptive_block_size,
+            adaptive_c,
         )
         value = None
         applied_value = None
@@ -1168,6 +1186,8 @@ def threshold_image(
         offset=threshold_offset,
         applied_value=applied_value,
         invert=invert,
+        adaptive_block_size=adaptive_block_size if mode == ThresholdMode.ADAPTIVE else None,
+        adaptive_c=adaptive_c if mode == ThresholdMode.ADAPTIVE else None,
     )
 
 
